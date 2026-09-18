@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NextWord — LSTM next-word prediction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div class="header-text">
+        <div class="eyebrow-row">
+          <span class="mark" aria-hidden="true">{ }</span>
+          <span class="eyebrow">LSTM-powered</span>
+        </div>
+        <h1>NextWordPrediction</h1>
+        <p>Watch a recurrent network read your sentence, one token at a time, and guess what comes next.</p>
+      </div>
+
+      <!-- Ambient animated diagram: tokens flowing into the LSTM cell, a
+           prediction flowing out. Purely decorative, mirrors the real
+           pipeline described below. -->
+      <svg class="hero-viz" viewBox="0 0 420 200" role="img" aria-label="Animated diagram of words flowing into an LSTM cell and a predicted word flowing out">
+        <defs>
+          <linearGradient id="lineFade" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#4C5FD5" stop-opacity="0"/>
+            <stop offset="100%" stop-color="#4C5FD5" stop-opacity="0.55"/>
+          </linearGradient>
+        </defs>
+
+        <!-- connecting lines: 3 input tokens -> LSTM -->
+        <path id="pathA" d="M64,40 C140,40 150,96 196,100" class="flow-line"/>
+        <path id="pathB" d="M64,100 C130,100 150,100 196,100" class="flow-line"/>
+        <path id="pathC" d="M64,160 C140,160 150,104 196,100" class="flow-line"/>
+        <!-- LSTM -> output -->
+        <path id="pathOut" d="M244,100 C300,100 310,100 356,100" class="flow-line flow-line-out"/>
+
+        <!-- input token nodes -->
+        <g class="token-node">
+          <circle cx="40" cy="40" r="17"/>
+          <text x="40" y="45">the</text>
+        </g>
+        <g class="token-node">
+          <circle cx="40" cy="100" r="17"/>
+          <text x="40" y="105">cat</text>
+        </g>
+        <g class="token-node">
+          <circle cx="40" cy="160" r="17"/>
+          <text x="40" y="165">sat</text>
+        </g>
+
+        <!-- LSTM cell -->
+        <g class="lstm-node">
+          <circle class="lstm-halo" cx="220" cy="100" r="34"/>
+          <circle class="lstm-core" cx="220" cy="100" r="24"/>
+          <text x="220" y="105">LSTM</text>
+        </g>
+
+        <!-- output node -->
+        <g class="output-node">
+          <circle cx="380" cy="100" r="19"/>
+          <text id="output-glyph" x="380" y="106">?</text>
+        </g>
+
+        <!-- moving pulses along the flow lines -->
+        <circle class="pulse pulse-a" r="3.4"><animateMotion dur="2.6s" begin="0s" repeatCount="indefinite"><mpath href="#pathA"/></animateMotion></circle>
+        <circle class="pulse pulse-b" r="3.4"><animateMotion dur="2.6s" begin="0.35s" repeatCount="indefinite"><mpath href="#pathB"/></animateMotion></circle>
+        <circle class="pulse pulse-c" r="3.4"><animateMotion dur="2.6s" begin="0.7s" repeatCount="indefinite"><mpath href="#pathC"/></animateMotion></circle>
+        <circle class="pulse pulse-out" r="3.8"><animateMotion dur="1.3s" begin="1.9s" repeatCount="indefinite"><mpath href="#pathOut"/></animateMotion></circle>
+      </svg>
+    </div>
+  </header>
+
+  <main class="wrap">
+
+    <!-- ============ PREDICT ============ -->
+    <section class="panel predict-panel" aria-label="Next word prediction">
+      <div class="panel-head">
+        <h2>Try it</h2>
+        <p>Start a sentence. The model will suggest the single word it thinks comes next.</p>
+      </div>
+
+      <textarea
+        id="predict-input"
+        class="editor-input"
+        rows="3"
+        placeholder="Start typing a sentence..."
+        spellcheck="false"
+      ></textarea>
+
+      <div class="editor-controls">
+        <span class="hint" id="predict-hint">&nbsp;</span>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="clear-btn" type="button">Clear</button>
+          <button class="btn btn-primary" id="predict-btn" type="button">
+            <span class="btn-label">Predict next word</span>
+            <span class="btn-spinner" hidden></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="result-card" id="result-card" hidden>
+        <span class="result-label">Predicted next word</span>
+        <span class="result-word">
+          <span id="result-word"></span><span class="type-caret" aria-hidden="true"></span>
+        </span>
+      </div>
+
+      <p class="error-msg" id="predict-error" hidden></p>
+    </section>
+
+    <!-- ============ GENERATE ============ -->
+    <section class="panel generate-panel" aria-label="Text generation">
+      <div class="panel-head">
+        <h2>Generate a passage</h2>
+        <p>Give the model a starting phrase and let it keep going, one predicted word at a time.</p>
+      </div>
+
+      <div class="generate-form">
+        <div class="field">
+          <label for="generate-input">Starting text</label>
+          <input
+            id="generate-input"
+            type="text"
+            placeholder="The future of"
+            autocomplete="off"
+          >
+        </div>
+
+        <div class="field field-narrow">
+          <label for="word-count">Words to generate</label>
+          <div class="stepper">
+            <button type="button" class="stepper-btn" id="decrement-btn" aria-label="Decrease">–</button>
+            <input id="word-count" type="number" min="1" max="50" value="10" inputmode="numeric">
+            <button type="button" class="stepper-btn" id="increment-btn" aria-label="Increase">+</button>
+          </div>
+        </div>
+      </div>
+
+    <div class="editor-controls">
+    <span class="hint" id="generate-hint">&nbsp;</span>
+
+     <div class="btn-row">
+          <button class="btn btn-primary" id="generate-btn" type="button">
+              <span class="btn-label">Generate text</span>
+              <span class="btn-spinner" hidden></span>
+         </button>
+      </div>
+    </div>
+
+      <p class="error-msg" id="generate-error" hidden></p>
+
+      <div class="generated-card" id="generated-card" hidden>
+        <div class="generated-card-head">
+          <span class="result-label">Generated passage</span>
+          <div class="icon-btn-row">
+            <button class="icon-btn" id="copy-btn" type="button" title="Copy text">Copy</button>
+            <button class="icon-btn" id="reset-btn" type="button" title="Start over">Reset</button>
+          </div>
+        </div>
+        <p class="generated-text" id="generated-text"></p>
+      </div>
+    </section>
+
+    <!-- ============ ABOUT ============ -->
+    <section class="panel about-panel" aria-label="About the model">
+      <div class="panel-head">
+        <h2>About the model</h2>
+        <p>
+          This project uses a Long Short-Term Memory (LSTM) neural network trained to
+          predict the next word in a sequence of text. This diagram lights up in real
+          time whenever a prediction is running.
+        </p>
+      </div>
+
+      <div class="pipeline" id="pipeline">
+        <div class="pipeline-step" data-step="0"><span>Text</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step" data-step="1"><span>Tokenization</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step" data-step="2"><span>Sequence padding</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step" data-step="3"><span>LSTM</span></div>
+        <span class="pipeline-arrow">→</span>
+        <div class="pipeline-step pipeline-step-final" data-step="4"><span>Next word</span></div>
+      </div>
+
+      <dl class="model-facts">
+        <div class="model-fact">
+          <dt>Model</dt>
+          <dd>LSTM (Long Short-Term Memory)</dd>
+        </div>
+        <div class="model-fact">
+          <dt>Task</dt>
+          <dd>Next-word prediction</dd>
+        </div>
+        <div class="model-fact">
+          <dt>Framework</dt>
+          <dd>TensorFlow / Keras</dd>
+        </div>
+        <div class="model-fact">
+          <dt>Backend</dt>
+          <dd>FastAPI</dd>
+        </div>
+      </dl>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>NextWord AI — a small demo of an LSTM next-word prediction model.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
