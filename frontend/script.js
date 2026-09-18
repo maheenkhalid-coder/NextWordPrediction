@@ -3,7 +3,7 @@
 // Talks to the FastAPI backend running locally at API_BASE_URL.
 // ---------------------------------------------------------------------------
 
-const API_BASE_URL = "http://127.0.0.1:5000";
+const API_BASE_URL = "https://nextwordprediction-l1mu.onrender.com";
 
 // ---- element references ---------------------------------------------------
 const predictInput = document.getElementById("predict-input");
