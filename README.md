@@ -189,7 +189,7 @@ NextWordPrediction/
 ├── README.md
 ├── requirements.txt
 │
-├── model.h5
+├── lstm_model.h5
 ├── tokenizer.pkl
 ├── max_len.pkl
 │
